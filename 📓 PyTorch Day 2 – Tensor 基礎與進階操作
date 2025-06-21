@@ -1,0 +1,74 @@
+# ✅ 1. Tensor 資料型別與 dtype
+import torch
+
+# 建立不同型別的 Tensor
+float_tensor = torch.tensor([1.0, 2.0, 3.0])
+int_tensor = torch.tensor([1, 2, 3], dtype=torch.int32)
+bool_tensor = torch.tensor([True, False, True])
+
+print("Float Tensor:", float_tensor)
+print("Int Tensor:", int_tensor)
+print("Bool Tensor:", bool_tensor)
+
+# ✅ 2. Tensor 型態轉換
+
+a = torch.tensor([1.2, 3.4, 5.6])
+print("原始:", a, a.dtype)
+
+a_int = a.to(torch.int)
+print("轉為整數:", a_int)
+
+a_bool = a > 3.0
+print("轉為布林:", a_bool)
+
+# ✅ 3. Tensor 索引與切片
+
+x = torch.arange(0, 20).view(4, 5)
+print("原始 Tensor:\n", x)
+
+print("第 1 列:", x[0])
+print("第 2~4 列，第 2~5 欄:\n", x[1:4, 1:5])
+print("每列的第 3 欄:", x[:, 2])
+
+# ✅ 4. Tensor 運算與 broadcasting
+
+a = torch.ones(2, 3)
+b = torch.tensor([1, 2, 3])   # shape (3,)
+
+print("a shape:", a.shape)
+print("b shape:", b.shape)
+
+c = a + b   # 自動 broadcast 成 (2,3) + (1,3)
+print("a + b:\n", c)
+
+# ✅ 5. Tensor 維度操作
+
+x = torch.randn(2, 3)
+print("原 shape:", x.shape)
+
+x_unsq = x.unsqueeze(0)  # 增加一個 batch 維度
+print("unsqueeze:", x_unsq.shape)
+
+x_sqz = x_unsq.squeeze() # 移除多餘維度
+print("squeeze:", x_sqz.shape)
+
+x_t = x.transpose(0, 1)
+print("轉置:", x_t.shape)
+
+# ✅ 6. 挑戰練習（Optional）
+# 建立一個 shape = (4, 5) 的 Tensor，將第 2 列、第 3 欄的元素設為 999。
+## version1：（✅ index 是從 0 開始）
+data = torch.rand(4,5)
+data[2,3] = 999
+
+# 建立兩個 shape 不同的 Tensor（如 (2,3) 和 (3,)）並加總，觀察 broadcasting 結果。
+## version1：(✅ Broadcasting 正確發生，(3,) 會在前面補 1 維，變為 (1,3)，然後 broadcast 成 (2,3))
+tensor_1 = torch.ones(2,3)
+tensor_2 = torch.ones(3)
+tensor_3 = tensor_1 + tensor_2
+
+# 嘗試對任意 2 維 Tensor 執行 .sum(dim=1) 與 .mean(dim=0)，理解其含義。
+## version1：
+data = torch.tensor([[1,2,3],[4,5,6]], dtype=float)
+print(torch.sum(data, dim=1))  # [6, 15] (✅ .sum(dim=1) 是對「每一列」加總)
+print(torch.mean(data, dim=0))  # [2.5, 3.5, 4.5] (✅ .mean(dim=0) 是對「每一欄」取平均)
