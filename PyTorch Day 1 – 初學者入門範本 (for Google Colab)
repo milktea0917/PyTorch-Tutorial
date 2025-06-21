@@ -1,0 +1,68 @@
+# ✅ 1. 確認 PyTorch 是否已安裝（Colab 已預裝）
+import torch
+print(torch.__version__)
+print("CUDA available:", torch.cuda.is_available())
+
+# ✅ 2. 建立與操作 Tensor
+# 建立 Tensor
+x = torch.empty(3, 4)         # 未初始化
+y = torch.rand(3, 4)          # 隨機初始化
+z = torch.zeros(3, 4)         # 全為 0
+o = torch.ones(3, 4)          # 全為 1
+print("x:\n", x)
+print("y:\n", y)
+
+# ✅ 3. 基本運算
+a = torch.rand(2, 2)
+b = torch.rand(2, 2)
+
+print("a + b =\n", a + b)              # 普通加法
+print("a - b =\n", torch.sub(a, b))    # 使用函數
+print("a * b =\n", a * b)              # element-wise 乘法
+print("a @ b.T =\n", a @ b.T)          # 矩陣乘法
+
+# ✅ 4. Tensor 操作
+t = torch.rand(4, 3)
+print("原始形狀:", t.shape)
+
+t_reshaped = t.view(2, 6)
+print("reshape 後:", t_reshaped.shape)
+print("轉為 numpy:", t.numpy())
+
+# ✅ 5. Tensor 與 GPU
+if torch.cuda.is_available():
+    device = torch.device("cuda")
+    x = torch.rand(2, 2).to(device)
+    print("Tensor 在 GPU 上運行:", x)
+else:
+    print("目前無 GPU 可使用，仍可用 CPU")
+
+# ✅ 6. 挑戰練習（Optional）
+
+# 建立一個 10x10 的 Tensor 並填入 0 到 99
+
+## version1：
+data = [i for i in range(100)]
+data = torch.tensor(data).view(10,10)
+
+## version2：(more PyTorch-native)
+data = torch.arange(100).view(10, 10)
+
+# 對任意 Tensor 計算 row-wise 最大值與其索引
+
+## version1：
+for i in range(data.size(0)):
+  print(f"max: {max(data[i])}; index: {torch.argmax(data[i])}")
+
+## version2：(better version)
+max_vals, max_indices = torch.max(data, dim=1)
+for i in range(data.size(0)):
+    print(f"Row {i} -> max: {max_vals[i]}, index: {max_indices[i]}")
+
+# 使用 GPU 來完成一次簡單運算
+
+## version1：
+data.to(device)
+
+## version2：(👀 小提醒：這一行 data.to(device) 並沒有改變 data 的內容，因為 .to() 是不會原地修改的，它會回傳一個新的 tensor。)
+data = data.to(device)
