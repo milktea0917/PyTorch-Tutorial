@@ -1,0 +1,73 @@
+# ✅ 1. 建立帶有 requires_grad 的 Tensor
+import torch
+
+x = torch.tensor([2.0, 3.0], requires_grad=True)
+y = x ** 2 + 2 * x + 1
+
+print("y:", y)
+
+# ✅ 2. 使用 .backward() 計算梯度
+
+## 因為 y 是向量，我們要給一個同型的權重向量來告訴 PyTorch 如何加總它
+grad_output = torch.tensor([1.0, 1.0])
+y.backward(gradient=grad_output)
+
+print("x 的梯度:", x.grad)
+
+## 📌 說明：
+## y = x² + 2x + 1 → dy/dx = 2x + 2
+## 所以對應位置會是 [2*2 + 2, 2*3 + 2] = [6, 8]
+
+# ✅ 3. 常見運算自動微分實例（標量 backward 不需指定 gradient）
+
+a = torch.tensor(5.0, requires_grad=True)
+b = a ** 3 + 2 * a
+b.backward()
+print("db/da:", a.grad)  # 3a² + 2 = 3*25 + 2 = 77
+
+# ✅ 4. 停用梯度追蹤的方法
+
+w = torch.randn(2, 2, requires_grad=True)
+
+## 方法 1：detach()
+no_grad_w = w.detach()
+print("梯度追蹤關閉:", no_grad_w.requires_grad)
+
+## 方法 2：with torch.no_grad()
+with torch.no_grad():
+    z = w * 2
+print("z requires_grad:", z.requires_grad)
+
+# ✅ 5. 清除梯度
+
+x = torch.tensor([2.0, 3.0], requires_grad=True)
+y = x * 2
+y.backward(gradient=torch.ones_like(x))
+
+print("第一次梯度:", x.grad)
+
+x.grad.zero_()  # 重設
+y = x * 3
+y.backward(gradient=torch.ones_like(x))
+print("第二次梯度:", x.grad)
+
+# ✅ 6. 挑戰練習（Optional）
+## 設定變數 x，計算函數 f(x) = sin(x) * x^2 的梯度，輸出 df/dx
+x = torch.randn(2,3, requires_grad=True) # ✅ 要記得requires_grad，才能計算backward()
+y = torch.sin(x) * (x**2)
+y.sum().backward() # 計算x的梯度
+print("df/dx:", x.grad)
+### why y.sum().backward()? --> ✅ https://discuss.pytorch.org/t/loss-backward-raises-error-grad-can-be-implicitly-created-only-for-scalar-outputs/12152
+
+## 建立一個含有 2 層操作的計算圖（如：先平方再乘以常數），並查看每一層的梯度
+x = torch.randn(2,3, requires_grad=True)
+y = x ** 3 + (2*x)**2 + 4
+y.sum().backward()
+print("df/dx:", x.grad)
+
+## 使用 with torch.no_grad() 包住一段運算，並說明為什麼這樣做（提示：inference 階段）
+with torch.no_grad():
+  x = torch.randn(2,3) # ✅ GPT：記得不要設requires_grad=True，這樣搭配no_grad()效率會更高。
+  y = torch.sin(x) * (x**2)
+# ANSWER：因為在inference階段，我們只是要model基於訓練好的weight產生output，並沒有要回去更新model的參數，所以不需要計算gradient
+# ✅ GPT： 完全了解 inference 階段不需梯度、可節省記憶體與計算資源。
