@@ -1,0 +1,132 @@
+# ✅ 1. 使用 TensorDataset 建立資料集
+
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+
+# 模擬資料（features 與 labels）
+X = torch.linspace(0, 10, steps=100).reshape(-1, 1)
+y = 2 * X + 1 + 0.5 * torch.randn_like(X)  # 加一些 noise
+
+# 建立 Dataset
+dataset = TensorDataset(X, y)
+
+# 建立 DataLoader
+loader = DataLoader(dataset, batch_size=10, shuffle=True)
+
+# 查看一個 batch
+for batch_X, batch_y in loader:
+    print("Batch X:", batch_X)
+    print("Batch y:", batch_y)
+    break
+
+# ✅ 2. 自定義 Dataset 類別
+
+from torch.utils.data import Dataset
+
+class MyDataset(Dataset):
+    def __init__(self):
+        self.data = torch.arange(100).float()
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        x = self.data[idx]
+        y = x * 2 + 3
+        return x, y
+
+my_dataset = MyDataset()
+my_loader = DataLoader(my_dataset, batch_size=8, shuffle=False)
+
+for x, y in my_loader:
+    print("x:", x)
+    print("y:", y)
+    break
+✅ 3. 加入 GPU 支援：Data + Model
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 模型
+import torch.nn as nn
+model = nn.Linear(1, 1).to(device)
+
+# 單個 batch forward
+for batch_X, batch_y in loader:
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+    
+    preds = model(batch_X)
+    print("Output:", preds)
+    break
+
+# ✅ 4. DataLoader 小技巧：設定參數
+
+loader = DataLoader(
+    dataset,
+    batch_size=16,
+    shuffle=True,
+    num_workers=2,   # 多執行緒資料預載（Colab 上請用 0 或 2）
+    pin_memory=True # CPU → GPU 較快
+)
+
+# ✅ 5. 挑戰練習（Optional）
+## 實作一個 Dataset，內容為平方根與平方數的對照表（例如 0~99）
+###version1
+X = torch.linspace(0, 99, steps=100).reshape(-1, 1)
+y = X ** 2
+dataset = TensorDataset(X, y)
+
+###version2
+class MyDataset(Dataset):
+    def __init__(self):
+        self.data = torch.arange(100).float()
+        
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        x = self.data[idx]
+        y = x ** 2 
+        return x, y
+
+## 建立一個 DataLoader，使用 batch_size=20，並列出前 2 個 batch 的資料
+dataloader = DataLoader(dataset, batch_size=20, shuffle=True, num_workers=2, pin_memory=True)
+dataloader_iter = iter(dataloader)
+
+for iteration, (batch_X, batch_y) in enumerate(dataloader_iter):
+  if iteration > 1:
+    break
+
+## 嘗試與一個簡單線性模型結合，將 batch 資料輸入並輸出預測結果
+import torch
+import torch.nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = nn.Linear(1,1).to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.SGD(model.parameters(), lr=1e-3) # 記得要多optimizer
+epochs = 3
+
+for epoch in range(epochs):
+
+  # for steps, (batch_X, batch_y) in enumerate(dataloader_iter): 
+  # → dataloader_iter 錯誤 → 每次 epoch 都從同一個地方接著讀 → 很快就讀完，再也拿不到新資料 → 之後訓練 loop 會空轉！ 
+  for batch_X, batch_y in dataloader:
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+    loss = criterion(preds, batch_y)
+
+    optimizer.zero_grad() # 先清空Gradient
+    loss.backward() # 算loss
+    optimizer.step() # 調整模型參數
+    # print("preds:", preds)
+    # print("loss:", loss)
+
+  print(f"[Epoch {epoch+1}] Loss: {loss.item():.4f}")
+
+# 📌 小提醒：
+## 每次從 DataLoader 取出的 batch 都是隨機的（若有 shuffle=True）
+## Dataset 必須實作三個方法：__init__、__len__、__getitem__
+## 在 GPU 訓練時記得 .to(device) 搬移資料
