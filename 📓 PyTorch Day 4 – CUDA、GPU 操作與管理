@@ -1,0 +1,90 @@
+# ✅ 1. 檢查是否有 GPU 可用
+import torch
+
+print("是否有可用的 GPU：", torch.cuda.is_available())
+print("GPU 數量：", torch.cuda.device_count())
+print("目前使用的裝置：", torch.cuda.current_device())
+print("GPU 名稱：", torch.cuda.get_device_name(0))
+
+# ✅ 2. 建立在 GPU 上的 Tensor
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 方法 1：建立時直接指定裝置
+a = torch.ones(2, 3, device=device)
+
+# 方法 2：先建立再搬移
+b = torch.rand(2, 3)
+b = b.to(device)
+
+print("a:", a)
+print("b:", b)
+print("a.device:", a.device)
+
+# ✅ 3. Tensor 從 GPU 搬回 CPU
+
+b_cpu = b.to("cpu")
+print("b on CPU:", b_cpu)
+print("b_cpu.device:", b_cpu.device)
+
+# ✅ 4. 與模型搭配 GPU
+
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# 建立簡單模型
+model = nn.Linear(10, 5)
+model = model.to(device)
+
+# 模擬輸入
+x = torch.randn(3, 10).to(device)
+
+# 前向傳播
+output = model(x)
+print("Output device:", output.device)
+
+# ✅ 5. 計算與運算也會在 GPU 上進行
+
+a = torch.randn(1000, 1000, device=device)
+b = torch.randn(1000, 1000, device=device)
+c = torch.matmul(a, b)
+print("c.device:", c.device)
+
+# ✅ 6. 挑戰練習（Optional）
+## 建立兩個 shape=(256, 256) 的 Tensor 並搬到 GPU，上面做 element-wise 相乘並計時（用 torch.cuda.synchronize() + time.time()）
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+tensor_1 = torch.randn(256,256, requires_grad=True).to(device) # 記得要搬到device上
+tensor_2 = torch.randn(256,256, requires_grad=True).to(device) # 記得要搬到device上
+torch.cuda.synchronize(device=device)
+start_time = time.time()
+tensor_3 = tensor_1 * tensor_2
+torch.cuda.synchronize(device=device) # 少補這行，不然可能element-wise的乘法還沒做完，就計時了
+end_time = time.time()
+print("used time: ", end_time - start_time)
+
+## 嘗試建立一個自定義模型（如兩層線性 + ReLU），確認參數與輸出是否都在 GPU 上
+class SimpleNeuralNetwork(nn.Module):
+    def __init__(self):
+        super(SimpleNeuralNetwork, self).__init__()
+        # Define the layers of your network in the __init__ method
+        self.fc1 = nn.Linear(256, 100)  # Input layer (256 features) to hidden layer (100 neurons)
+        self.fc2 = nn.Linear(100, 10) # Hidden layer (100 neurons) to another hidden layer (10 neurons)
+        
+    def forward(self, x):
+        # Define the forward pass, specifying how data flows through the layers
+        x = F.relu(self.fc1(x)) # Apply ReLU activation after the first linear layer
+        x = F.relu(self.fc2(x)) # Apply ReLU activation after the second linear layer
+                      # Output layer, no activation function for regression or raw scores
+        return x
+
+model = SimpleNeuralNetwork().to(device)
+tensor_3 = tensor_3.to(device)
+output = model(tensor_3)
+
+## 嘗試將一個 GPU Tensor 搬回 CPU 並轉為 NumPy 陣列（.cpu().numpy()）
+### version1
+output = output.to('cpu').detach().numpy()
+
+### version2
+output = output.cpu().detach().numpy()
