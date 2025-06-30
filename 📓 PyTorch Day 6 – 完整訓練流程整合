@@ -1,0 +1,211 @@
+# ✅ 1. 模擬資料：線性函數加雜訊
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+
+# 建立資料
+X = torch.linspace(0, 10, steps=100).reshape(-1, 1)
+y = 3 * X + 2 + torch.randn_like(X) * 2  # y = 3x + 2 + noise
+
+dataset = TensorDataset(X, y)
+loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+# ✅ 2. 建立模型、Loss 函數與 Optimizer
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = nn.Linear(1, 1).to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+
+# ✅ 3. 訓練迴圈：標準五步驟
+epochs = 50
+
+for epoch in range(epochs):
+    running_loss = 0.0
+    for batch_X, batch_y in loader:
+        # 資料搬到 GPU
+        batch_X = batch_X.to(device)
+        batch_y = batch_y.to(device)
+
+        # Step 1: forward
+        preds = model(batch_X)
+
+        # Step 2: compute loss
+        loss = criterion(preds, batch_y)
+
+        # Step 3: 清除上一輪的梯度
+        optimizer.zero_grad()
+
+        # Step 4: backward
+        loss.backward()
+
+        # Step 5: 更新參數
+        optimizer.step()
+
+        running_loss += loss.item()
+
+    print(f"[Epoch {epoch+1}] Loss: {running_loss:.4f}")
+
+# ✅ 4. 視覺化結果（可選進階）
+import matplotlib.pyplot as plt
+
+# 預測
+model.eval()
+with torch.no_grad():
+    X_cpu = X.to(device)
+    y_pred = model(X_cpu).cpu()
+
+plt.scatter(X, y, label='True')
+plt.plot(X, y_pred, color='red', label='Prediction')
+plt.legend()
+plt.title("Linear Regression Fit")
+plt.show()
+
+# ✅ 5. 挑戰練習（Optional）
+## 嘗試使用 Adam optimizer 並觀察 loss 收斂是否更快
+
+### 🔶 1. 資料產生與 Dataset、DataLoader
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+X = torch.linspace(0, 10, steps=100).reshape(-1, 1)
+y = 3 * X + 2 + torch.randn_like(X) * 2
+dataset = TensorDataset(X, y)
+loader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+### 🔶 2. 建立模型、Loss 與 Optimizer
+import torch.nn as nn
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = nn.Linear(1,1).to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)
+
+### 🔶 3. 訓練迴圈
+epochs = 50
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+    loss = criterion(preds, batch_y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    running_loss += loss.item()
+  print(f"[Epoch {epoch+1}] Loss：{running_loss:.4f}")
+
+# ANSWER：LOSS收斂沒有更快，但似乎更為平滑 (✔️ 這個觀察其實頗精準！Adam 優點本來就不是「快」而是「穩定」與「自動調整學習率」，通常在噪聲較大或 loss 曲線起伏大的資料上會比較明顯。)
+# batch_size 改大一點（例如 16），可能更能看出 Adam 與 SGD 的差異。
+
+## 嘗試用 3 層神經網路取代 Linear 模型：Linear(1,16) → ReLU → Linear(16,1)
+### 🔶 4. 資料產生與 Dataset、DataLoader
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+X = torch.linspace(0, 10, steps=100).reshape(-1, 1) # (100,) --> (100, 1)
+y = 3 * X + 2 + torch.randn_like(X) * 2  # y = 3x + 2 + noise
+dataset = TensorDataset(X, y)
+loader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+### 🔶 5. 建立模型、Loss 與 Optimizer
+import torch.nn as nn
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 16)  # Input layer (1 features) to hidden layer (16 neurons)
+      self.fc2 = nn.Linear(16, 1) # Hidden layer (16 neurons) to another hidden layer (1 neurons)
+      
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc2(F.relu(self.fc1(x))) # Apply ReLU activation after the first linear layer
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)
+
+### 🔶 6. 訓練迴圈
+epochs = 50
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+    loss = criterion(preds, batch_y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    running_loss += loss.item()
+  
+  print(f"[Epoch {epoch+1}] Loss：{running_loss:.4f}")
+
+## 嘗試紀錄每個 epoch 的 loss 並用圖畫出 loss 曲線（用 matplotlib）
+### 🔶 7. 資料產生與 Dataset、DataLoader
+import torch
+from torch.utils.data import TensorDataset, DataLoader
+X = torch.linspace(0, 10, steps=100).reshape(-1, 1) # (100,) --> (100, 1)
+y = 3 * X + 2 + torch.randn_like(X) * 2  # y = 3x + 2 + noise
+dataset = TensorDataset(X, y)
+loader = DataLoader(dataset, batch_size=4, shuffle=True)
+
+### 🔶 8. 建立模型、Loss 與 Optimizer
+import torch.nn as nn
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 16)  # Input layer (1 features) to hidden layer (16 neurons)
+      self.fc2 = nn.Linear(16, 1) # Hidden layer (16 neurons) to another hidden layer (1 neurons)
+      
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc2(F.relu(self.fc1(x))) # Apply ReLU activation after the first linear layer
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr = 0.01)
+
+### 🔶 9. 訓練迴圈
+import matplotlib.pyplot as plt
+Loss_List = []
+
+epochs = 50
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+    loss = criterion(preds, batch_y)
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    running_loss += loss.item()
+
+  print(f"[Epoch {epoch+1}] Loss：{running_loss:.4f}")
+  # Loss_List.append(running_loss) # 總和
+  Loss_List.append(running_loss / len(loader))  # 平均 loss (✅建議 - 平均 (不隨batch增加變大))
+  
+plt.scatter(range(epochs), Loss_List, label="Loss per epoch") (✅建議 - 加入label)
+plt.plot(range(epochs), Loss_List, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
