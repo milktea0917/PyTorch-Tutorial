@@ -17,13 +17,13 @@ I’m using it to review what I’ve learned in the past, and I hope it can also
 ### 🧱 Week 1：PyTorch 基礎與張量操作
 | Day |	主題 | 重點內容 |
 | --- | --- | --- |
-| 1 |	PyTorch 安裝與簡介 |	安裝、IDE設定、基本概念 |
-| 2 |	Tensor 基礎 |	建立、形狀轉換、運算 |
+| 1 |	初學者入門範本 (for Google Colab) |	安裝、IDE設定、基本概念 |
+| 2 |	Tensor 基礎與進階操作 |	建立、形狀轉換、運算 |
 | 3 |	Autograd 自動微分 |	requires_grad, backward() |
-| 4 |	CUDA/GPU 操作 |	.to(device), GPU 加速 |
-| 5 |	Dataset & DataLoader |	自定義資料集、batch 載入 |
-| 6 |	模型定義方式 |	nn.Module、forward() |
-| 7 |	優化器與損失函數 |	optimizer.step(), 常用 loss |
+| 4 |	CUDA/GPU 操作 |	.to(device)、確認 GPU 是否可用、掌握 .to()、.cuda()、.cpu() 的使用時機 |
+| 5 |	Dataset & DataLoader | 使用 TensorDataset 與 DataLoader、練習用 Batch & Shuffle 輸入資料到模型中 |
+| 6 |	完整訓練流程整合 |	了解標準訓練流程的五大步驟、練習建立 Loss & Optimizer、撰寫訓練迴圈並觀察 Loss 收斂情況 |
+| 7 |	非線性資料建模與過擬合控制 |	對比不同模型表現（linear vs MLP）、避免過擬合的基本技巧（Dropout / L2 正則） |
 
 ### 🧠 Week 2：實戰訓練流程 & CNN 模型
 | Day |	主題 | 重點內容 |
