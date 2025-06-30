@@ -1,0 +1,507 @@
+# 📘 預期產出（作業內容）
+## ✅ 1. 用 sin(x) 生成資料，觀察數據分佈
+from torch.utils.data import TensorDataset, DataLoader
+X = torch.linspace(-3.14, 3.14, steps=200).reshape(-1, 1)
+y = torch.sin(X) + torch.randn_like(X) * 0.1
+dataset = TensorDataset(X,y)
+loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+## ✅ 2. 使用 linear model 訓練、輸出 loss 與預測圖
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = nn.Linear(1, 1).to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# linear model --> eval_loss： tensor(4.1319)
+
+## ✅ 3. 使用 MLP 模型訓練、輸出 loss 與預測圖
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 32)  # Input layer (1 features) to hidden layer (32 neurons)
+      self.fc2 = nn.Linear(32, 1) # Hidden layer (32 neurons) to another hidden layer (1 neurons)
+      
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc2(F.relu(self.fc1(x))) # Apply ReLU activation after the first linear layer
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# mlp model --> eval_loss： tensor(9.5511)
+
+## ✅ 4. 增加 Dropout 與 weight_decay，看是否減緩過擬合
+## 📌 linear + drouput + weight_decay
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 1)  # Input layer (1 features) to hidden layer (1 neurons)
+      self.dropout = nn.Dropout(p=0.3)
+
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.dropout(F.relu(self.fc1(x))) # Apply ReLU activation after the first linear layer
+      return x
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-3)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# 📌 linear model + dropout + weight_decay --> eval_loss： tensor(1.1959)
+
+## 📌 mlp + drouput + weight_decay
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 32)  # Input layer (1 features) to hidden layer (32 neurons)
+      self.fc2 = nn.Linear(32, 1) # Hidden layer (32 neurons) to another hidden layer (1 neurons)
+      self.dropout = nn.Dropout(p=0.3)
+
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc1(x)
+      x = F.relu(x)
+      x = self.dropout(x)
+
+      x = self.fc2(x)
+      x = F.relu(x)
+      x = self.dropout(x)
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-3)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# 📌 mlp + dropout + weight_decay --> eval_loss： tensor(0.4351)
+
+## 📌 mlp + drouput 
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 32)  # Input layer (1 features) to hidden layer (32 neurons)
+      self.fc2 = nn.Linear(32, 1) # Hidden layer (32 neurons) to another hidden layer (1 neurons)
+      self.dropout = nn.Dropout(p=0.3)
+
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc1(x)
+      x = F.relu(x)
+      x = self.dropout(x)
+
+      x = self.fc2(x)
+      x = F.relu(x)
+      x = self.dropout(x)
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# 📌 mlp + drouput --> eval_loss： tensor(0.4464)
+
+## 📌 mlp + weight_decay
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 32)  # Input layer (1 features) to hidden layer (32 neurons)
+      self.fc2 = nn.Linear(32, 1) # Hidden layer (32 neurons) to another hidden layer (1 neurons)
+
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc1(x)
+      x = F.relu(x)
+      x = self.fc2(x)
+      x = F.relu(x)
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-3)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  X = torch.linspace(-10.87, 10.87, steps=200).reshape(-1, 1)
+  y = torch.sin(X) + torch.randn_like(X) * 0.1
+  test_dataset = TensorDataset(X,y)
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# 📌 mlp + weight_decay --> eval_loss： tensor(0.4292)
+
+## 5. 小結：哪些模型效果較好、如何防止 overfitting
+# 📍額外 Bonus 題（如果你想挑戰）
+## 實作 train / valid 分離，觀察是否出現訓練 loss ↓ 但 valid loss ↑（過擬合現象）
+## 嘗試不同 activation function（如 nn.Tanh, nn.Sigmoid）替換 ReLU
+from torch.utils.data import TensorDataset, DataLoader, random_split
+X = torch.linspace(-3.14, 3.14, steps=200).reshape(-1, 1)
+y = torch.sin(X) + torch.randn_like(X) * 0.1
+dataset = TensorDataset(X,y)
+
+# Define the desired split ratio
+train_ratio = 0.8
+test_ratio = 1 - train_ratio
+
+# Calculate the number of samples for each split
+total_samples = len(dataset)
+train_size = int(train_ratio * total_samples)
+test_size = total_samples - train_size
+
+train_dataset, test_dataset = random_split(dataset, [train_size, test_size])
+loader = DataLoader(dataset, batch_size=16, shuffle=True)
+
+import torch.nn as nn
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class SimpleNeuralNetwork(nn.Module):
+  def __init__(self):
+      super(SimpleNeuralNetwork, self).__init__()
+      # Define the layers of your network in the __init__ method
+      self.fc1 = nn.Linear(1, 32)  # Input layer (1 features) to hidden layer (32 neurons)
+      self.fc2 = nn.Linear(32, 1) # Hidden layer (32 neurons) to another hidden layer (1 neurons)
+
+  def forward(self, x):
+      # Define the forward pass, specifying how data flows through the layers
+      x = self.fc1(x)
+      # x = F.relu(x)
+      # x = F.tanh(x)
+      x = F.sigmoid(x)
+      x = self.fc2(x)
+      # x = F.relu(x)
+      # x = F.tanh(x)
+      x = F.sigmoid(x)
+      return x
+
+model = SimpleNeuralNetwork().to(device)
+model.train()
+criterion = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-3)
+
+epochs = 50 
+lost_list = []
+for epoch in range(epochs):
+  running_loss = 0.0
+  for batch_X, batch_y in loader:
+
+    batch_X = batch_X.to(device)
+    batch_y = batch_y.to(device)
+
+    preds = model(batch_X)
+
+    loss = criterion(preds, batch_y)
+    running_loss += loss
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+  lost_list.append(running_loss.detach().cpu()/len(loader))
+
+import matplotlib.pyplot as plt
+plt.scatter(range(epochs), lost_list, label="Loss per epoch") 
+plt.plot(range(epochs), lost_list, color='red')
+plt.title("Training Loss Curve")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+model.eval()
+with torch.no_grad():
+  test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
+
+  eval_loss = 0.0
+  for batch_X, batch_y in test_loader:
+    preds = model(batch_X.to(device))
+    loss = criterion(preds, batch_y.to(device))
+    eval_loss += loss
+print("eval_loss：", eval_loss.detach().cpu()/len(test_loader))
+# Relu --> 0.2549
+# Tanh --> 0.0197
+# sigmoid --> 0.2955
