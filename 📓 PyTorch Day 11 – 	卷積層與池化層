@@ -1,0 +1,140 @@
+import torch 
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision import datasets, transforms
+from torchvision.utils import make_grid
+from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
+from torchinfo import summary
+import os
+import re
+
+# prepare MNIST Data
+transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.1307,), (0.3081,))
+])
+
+train_data = datasets.MNIST(root="./data", train=True, transform=transform, download=True)
+test_data = datasets.MNIST(root="./data", train=False, transform=transform)
+
+train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_data, batch_size=1000)
+
+# create model
+class CNNShapePractice(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
+        self.fc1 = nn.Linear(16 * 7 * 7, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.view(-1, 16 * 7 * 7) # 除了batch之外，都壓縮成一維
+        x = self.fc1(x)
+        return x
+
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+model = CNNShapePractice().to(device)
+summary(model, input_size=(64, 1, 28, 28))
+
+# 實作一個 2~3 層 CNN 模型，列出每層 output shape
+# input_size = (64,1,28,28)
+# after self.conv1, size --> (64,8,28,28)
+# after MaxPool2d, size --> (64,8,14,14)
+# after self.conv2, size --> (64,16,14,14)
+# after MaxPool2d, size --> (64,16,7,7)
+# after x.view, size --> (64,784)
+# after fc1, size --> (64,10)
+
+# optimizer 
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.SGD(model.parameters(), lr= 0.01)
+
+# train loop
+os.makedirs("model_checkpoint", exist_ok=True) # for saving model_checkpoint
+os.makedirs("runs", exist_ok=True) # for saving tensorboard
+writer = SummaryWriter(log_dir="runs/MNIST_CNN_pool")
+
+epochs = 20 
+train_losses = []
+
+for epoch in range(epochs):
+    model.train()
+    batch_loss = 0
+    for batch_X, batch_y in train_loader:
+        
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        
+        logits = model(batch_X)
+        loss = criterion(logits, batch_y)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        batch_loss += loss.item()
+
+        # tensorboard, 畫圖
+        if epoch == 0:
+            img_grid = make_grid(batch_X.cpu(), nrow=4, normalize=True)
+            writer.add_image("MNIST Images", img_grid, global_step=epoch)
+
+    avg_loss = batch_loss / len(train_loader)
+
+    # if better than the exists checkpoint, then save
+    if len(train_losses) == 0 or avg_loss < train_losses[-1]:
+        torch.save({'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss.item()}, f"model_checkpoint/checkpoin_{epoch}.pt")
+        
+    print(f"[Epoch {epoch+1}] Loss: {avg_loss, epoch}")
+    train_losses.append(avg_loss)
+
+    # tensorboard 紀錄loss
+    writer.add_scalar('Loss/train', avg_loss, epoch)
+
+    # tensorboard 紀錄權重、紀錄梯度
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            writer.add_histogram(f"{name}_weights", param.data.cpu().numpy(), epoch)
+            writer.add_histogram(f"{name}_grads", param.grad.data.cpu().numpy(), epoch)
+
+
+    # evaluation
+    model_checkpoint_path = "./model_checkpoint"
+    assert os.path.exists(model_checkpoint_path)==True
+    model_list = os.listdir(model_checkpoint_path)
+    model_list = sorted(
+        [f for f in model_list if f.startswith("checkpoint_")],
+        key=lambda x:int(re.finall(r"\d+", x)[0])
+    )
+
+    model_evaluate_result = {}
+    for i in model_list:
+        
+        correct = 0
+        total = 0
+        print(f"Loading model checkpoint: {i}")
+        checkpoint = torch.load(os.path.join(model_checkpoint_path, i))
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+
+        with torch.no_grad():
+            for batch_X, batch_y in test_loader:
+                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+                logits = model(batch_X)
+                pred = torch.argmax(logits, dim=1)
+                correct += (pred==batch_y).sum().item()
+                total += batch_y.size(0)
+
+        acc = correct / total
+        print(f"Test Accuracy: {acc * 100:.2f}% in model_checkpoint: {i}")
+        writer.add_scalar('Accuracy/test', acc, int(re.findall(r"\d+", i)[0]))
+        model_evaluate_result[i] = acc
+
+    writer.close()
