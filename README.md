@@ -32,20 +32,20 @@ I’m using it to review what I’ve learned in the past, and I hope it can also
 | 9 |	模型儲存與載入 |	torch.save(), load_state_dict() |
 | 10 |	練習：MNIST | 手寫辨識	全流程實作 |
 | 11 |	卷積層與池化層 |	nn.Conv2d, nn.MaxPool2d |
-| 12 |	CNN 架構練習 |	自建 CNN 模型 |
-| 13 |	CIFAR-10 資料集實作 |	image transforms, augmentation |
-| 14 |	視覺化：tensorboard or matplotlib |	Loss 曲線、confusion matrix |
+| 12 |	Dropout 與正規化技巧 |	Dropout、Weight Decay、Data Augmentation 實驗設計與比較 |
+| 13 |	CNN 架構進階實作 |	實作三種 CNN 結構，探討層數、kernel 組合、Dropout 效果 |
+| 14 |		CIFAR-10 實作 |	CIFAR-10 載入、normalization、augmentation、acc/loss 曲線 |
 
 ### 🔁 Week 3：進階模型與技巧
 | Day |	主題 | 重點內容 |
 | --- | --- | --- |
-| 15 |	RNN/LSTM 簡介與實作 |	文字分類 or 時序預測 |
-| 16 |	Transformer 基礎結構 |	nn.Transformer, attention |
-| 17 |	預訓練模型使用 |	torchvision.models、Huggingface |
-| 18 |	過擬合與正規化技巧 |	dropout, weight decay, early stopping |
-| 19 |	學習率調整策略 |	scheduler 使用方法 |
-| 20 |	多 GPU 訓練簡介 |	DataParallel, DistributedDataParallel |
-| 21 |	測試集推論與部署 |	model.eval(), 推論效能優化 |
+| 15 |	學習率調整策略 |	使用 StepLR, ReduceLROnPlateau, CosineAnnealingLR 等進行實驗 |
+| 16 |	視覺化進階 |	Grad-CAM、Feature Map 視覺化，配合 CNN 模型觀察特徵學習位置 |
+| 17 |	Transfer Learning 實作 |	使用 ResNet18 進行遷移學習，freeze 部分層、fine-tune 設計 |
+| 18 |	Early Stopping 與模型泛化 |	Validation loss 監控、early stopping、比較 overfit 測試 |
+| 19 |	測試集推論與導出模型 |	model.eval(), torch.save, torch.jit.trace, ONNX 導出 |
+| 20 |	小型專題規劃與模型調參 |	CIFAR10 / 貓狗分類練習，嘗試實作完整調參流程 |
+| 21 |	專題驗證與推論展示 |	評估、推論呈現、TensorBoard/Matplotlib 可視化展示成果 |
 
 ### ⚙️ Week 4：工具整合與小專題
 | Day |	主題 | 重點內容 |
