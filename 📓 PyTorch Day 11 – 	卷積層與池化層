@@ -36,10 +36,28 @@ class CNNShapePractice(nn.Module):
         x = x.view(-1, 16 * 7 * 7) # 除了batch之外，都壓縮成一維
         x = self.fc1(x)
         return x
+    
+class CNNShapePractice_without_poolmax(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 8, kernel_size=3, stride=1, padding=1)
+        self.conv2 = nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1)
+        self.fc1 = nn.Linear(16 * 28 * 28, 10)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = x.view(-1, 16 * 28 * 28) # 除了batch之外，都壓縮成一維
+        x = self.fc1(x)
+        return x
 
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-model = CNNShapePractice().to(device)
-summary(model, input_size=(64, 1, 28, 28))
+# model = CNNShapePractice().to(device)
+model = CNNShapePractice_without_poolmax().to(device)
+
+# 比較模型差異
+summary(CNNShapePractice(), input_size=(1, 1, 28, 28))
+summary(CNNShapePractice_without_poolmax(), input_size=(1, 1, 28, 28))
 
 # 實作一個 2~3 層 CNN 模型，列出每層 output shape
 # input_size = (64,1,28,28)
@@ -54,10 +72,10 @@ summary(model, input_size=(64, 1, 28, 28))
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr= 0.01)
 
-# train loop
+# # train loop
 os.makedirs("model_checkpoint", exist_ok=True) # for saving model_checkpoint
 os.makedirs("runs", exist_ok=True) # for saving tensorboard
-writer = SummaryWriter(log_dir="runs/MNIST_CNN_pool")
+writer = SummaryWriter(log_dir="runs/MNIST_CNN_without_pool")
 
 epochs = 20 
 train_losses = []
@@ -90,7 +108,7 @@ for epoch in range(epochs):
         torch.save({'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'loss': loss.item()}, f"model_checkpoint/checkpoin_{epoch}.pt")
+                    'loss': loss.item()}, f"model_checkpoint/checkpoint_{epoch}.pt")
         
     print(f"[Epoch {epoch+1}] Loss: {avg_loss, epoch}")
     train_losses.append(avg_loss)
@@ -105,36 +123,51 @@ for epoch in range(epochs):
             writer.add_histogram(f"{name}_grads", param.grad.data.cpu().numpy(), epoch)
 
 
-    # evaluation
-    model_checkpoint_path = "./model_checkpoint"
-    assert os.path.exists(model_checkpoint_path)==True
-    model_list = os.listdir(model_checkpoint_path)
-    model_list = sorted(
-        [f for f in model_list if f.startswith("checkpoint_")],
-        key=lambda x:int(re.finall(r"\d+", x)[0])
-    )
+# evaluation
+model_checkpoint_path = "./model_checkpoint"
+assert os.path.exists(model_checkpoint_path)==True
+model_list = os.listdir(model_checkpoint_path)
+model_list = sorted(
+    [f for f in model_list if f.startswith("checkpoint_")],
+    key=lambda x:int(re.findall(r"\d+", x)[0])
+)
 
-    model_evaluate_result = {}
-    for i in model_list:
-        
-        correct = 0
-        total = 0
-        print(f"Loading model checkpoint: {i}")
-        checkpoint = torch.load(os.path.join(model_checkpoint_path, i))
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.eval()
+model_evaluate_result = {}
+for i in model_list:
+    
+    correct = 0
+    total = 0
+    print(f"Loading model checkpoint: {i}")
+    checkpoint = torch.load(os.path.join(model_checkpoint_path, i))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
 
-        with torch.no_grad():
-            for batch_X, batch_y in test_loader:
-                batch_X, batch_y = batch_X.to(device), batch_y.to(device)
-                logits = model(batch_X)
-                pred = torch.argmax(logits, dim=1)
-                correct += (pred==batch_y).sum().item()
-                total += batch_y.size(0)
+    with torch.no_grad():
+        for batch_X, batch_y in test_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+            logits = model(batch_X)
+            pred = torch.argmax(logits, dim=1)
+            correct += (pred==batch_y).sum().item()
+            total += batch_y.size(0)
 
-        acc = correct / total
-        print(f"Test Accuracy: {acc * 100:.2f}% in model_checkpoint: {i}")
-        writer.add_scalar('Accuracy/test', acc, int(re.findall(r"\d+", i)[0]))
-        model_evaluate_result[i] = acc
+    acc = correct / total
+    print(f"Test Accuracy: {acc * 100:.2f}% in model_checkpoint: {i}")
+    writer.add_scalar('Accuracy/test', acc, int(re.findall(r"\d+", i)[0]))
+    model_evaluate_result[i] = acc
 
-    writer.close()
+writer.close()
+
+# find the best model from evaluate result
+best_model = max(model_evaluate_result, key=model_evaluate_result.get)
+best_acc = model_evaluate_result[best_model]
+
+# rename
+best_model_path = os.path.join(model_checkpoint_path, best_model)
+best_model_rename_path = os.path.join(model_checkpoint_path, 'best_model.pt')
+
+if os.path.exists(best_model_rename_path):
+    print(f"There exists a best_model, the script is gonig to replace.")
+    os.remove(best_model_rename_path)
+
+os.rename(best_model_path, best_model_rename_path)
+print(f"✅ Renamed best model '{best_model}' → 'best_model.pt' (Acc: {best_acc:.4f})")
