@@ -1,0 +1,222 @@
+import torch 
+import torch.nn as nn
+import torch.nn.functional as F
+from torchvision import datasets, transforms
+import torchvision.models as models
+from torchvision.datasets import CIFAR10
+from torchvision.utils import make_grid
+from torch.utils.data import DataLoader, random_split
+import os
+import re
+# use for recording the loss and accuracy
+from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
+# use for knowing the model's structure
+from torchinfo import summary
+# confusion matrix
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
+import seaborn as sns
+import numpy as np
+
+# prepare CIFAR-10 Data
+# Normalization (mean, std derived from CIFAR-10 stats)
+mean = [0.4914, 0.4822, 0.4465]
+std = [0.2023, 0.1994, 0.2010] 
+
+# Training: Data Augmentation + Normalization
+train_transform = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomCrop(32, padding=4),
+    transforms.ToTensor(),
+    transforms.Normalize(mean, std)
+])
+
+# Testing: Only Normalize
+test_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize(mean, std)
+])
+
+train_data = datasets.CIFAR10(root="./data", train=True, transform=train_transform, download=True)
+train_data, val_data = random_split(train_data, [45000, 5000], generator=torch.Generator().manual_seed(42)) # fix random seed 
+test_data = datasets.CIFAR10(root="./data", train=False, transform=test_transform, download=True) # 不需要對test做 Augmentation
+
+train_loader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=2)
+val_loader = DataLoader(val_data, batch_size=1000, num_workers=2)
+test_loader = DataLoader(test_data, batch_size=1000, num_workers=2)
+
+# create model
+class CIFAR_CNN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.dropout = nn.Dropout(0.3)
+        self.fc1 = nn.Linear(64 * 8 * 8, 128)
+        self.fc2 = nn.Linear(128, 10)
+        
+    def forward(self, x):
+        x = self.pool(F.relu(self.bn1(self.conv1(x))))
+        x = self.pool(F.relu(self.bn2(self.conv2(x))))
+        x = x.view(x.size(0), -1)
+        x = self.dropout(x)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+
+# 比較模型差異
+summary(CIFAR_CNN(), input_size=(1, 3, 32, 32))
+summary(models.resnet18(pretrained=True), input_size=(1, 3, 32, 32))
+
+# 每層 output shape
+# input_size = (1,3,32,32)
+# after self.conv1, size --> (1,32,32,32)
+# after MaxPool2d, size --> (1,32,16,16)
+# after self.conv2, size --> (1,64,16,16)
+# after MaxPool2d, size --> (1,64,8,8)
+# after fc1, size --> (1,128)
+# after fc2, size --> (1,10)
+    
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+# model = CIFAR_CNN().to(device)
+model = models.resnet18(pretrained=True)
+model.fc = nn.Linear(model.fc.in_features, 10)
+model.to(device)
+
+# optimizer 
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), lr= 0.001, weight_decay=1e-4)
+
+# train loop
+os.makedirs("model_checkpoint", exist_ok=True) # for saving model_checkpoint
+os.makedirs("runs", exist_ok=True) # for saving tensorboard
+writer = SummaryWriter(log_dir=f"runs/MNIST_CNN_{model.__class__.__name__}_{optimizer.__class__.__name__}")
+
+epochs = 15
+train_losses = []
+val_losses = []
+val_accs = []
+
+for epoch in range(epochs):
+    model.train()
+    batch_loss = 0
+    for batch_X, batch_y in train_loader:
+        
+        batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+        
+        logits = model(batch_X)
+        loss = criterion(logits, batch_y)
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        batch_loss += loss.item()
+
+    avg_loss = batch_loss / len(train_loader)
+
+    # if better than the exists checkpoint, then save
+    val_loss = 0
+    model.eval()
+    with torch.no_grad():
+        correct = 0
+        total = 0
+        for batch_X, batch_y in val_loader:
+            
+            batch_X, batch_y  = batch_X.to(device), batch_y.to(device)
+            logits  = model(batch_X)
+
+            # if loss:
+            batch_val_loss = criterion(logits, batch_y)
+            val_loss += batch_val_loss.item()
+
+            # if accuracy:
+            pred = torch.argmax(logits, dim=1)
+            correct += (pred==batch_y).sum().item()
+            total += batch_y.size(0)
+    
+    avg_val_loss = val_loss / len(val_loader)
+    
+    val_acc = correct / total
+    writer.add_scalar('Accuracy/val', val_acc, epoch)
+    
+    # if better than exist model, save model_checkpoint
+    # GPT：其中一項改善就儲存
+    if len(val_losses) == 0 or ( avg_val_loss < val_losses[-1] or val_acc > val_accs[-1] ):
+        torch.save({'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': loss.item()}, f"model_checkpoint/checkpoint_{epoch}.pt")
+        
+    print(f"[Epoch {epoch+1}] train_loss: {avg_loss * 100:.2f}% val_loss: {avg_val_loss* 100:.2f}% Val Accuracy: {val_acc * 100:.2f}%")
+    
+    train_losses.append(avg_loss)
+    val_losses.append(avg_val_loss)
+    val_accs.append( val_acc )
+
+    # tensorboard 紀錄loss
+    writer.add_scalar('Loss/train', avg_loss, epoch+1)
+    writer.add_scalar('Loss/val', avg_val_loss, epoch+1)
+
+    # tensorboard 紀錄權重、紀錄梯度
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            writer.add_histogram(f"{name}_weights", param.data.cpu().numpy(), epoch+1)
+            writer.add_histogram(f"{name}_grads", param.grad.data.cpu().numpy(), epoch+1)
+
+# evaluation
+model_checkpoint_path = "./model_checkpoint"
+assert os.path.exists(model_checkpoint_path)==True
+
+model_list = os.listdir(model_checkpoint_path)
+model_list = sorted(
+    [f for f in model_list if f.startswith("checkpoint_")],
+    key=lambda x:int(re.findall(r"\d+", x)[0])
+)
+
+model_evaluate_result = {}
+for i in model_list:
+    
+    correct = 0
+    total = 0
+    print(f"Loading model checkpoint: {i}")
+    checkpoint = torch.load(os.path.join(model_checkpoint_path, i))
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    with torch.no_grad():
+        for batch_X, batch_y in test_loader:
+            batch_X, batch_y = batch_X.to(device), batch_y.to(device)
+            logits = model(batch_X)
+            pred = torch.argmax(logits, dim=1)
+            correct += (pred==batch_y).sum().item()
+            total += batch_y.size(0)
+
+    acc = correct / total
+    print(f"Test Accuracy: {acc * 100:.2f}% in model_checkpoint: {i}")
+    writer.add_scalar('Accuracy/test', acc, int(re.findall(r"\d+", i)[0]))
+    model_evaluate_result[i] = acc
+
+writer.close()
+
+# find the best model from evaluate result
+best_model = max(model_evaluate_result, key=model_evaluate_result.get)
+best_acc = model_evaluate_result[best_model]
+
+# rename
+best_model_path = os.path.join(model_checkpoint_path, best_model)
+best_model_rename_path = os.path.join(model_checkpoint_path, 'best_model.pt')
+
+if os.path.exists(best_model_rename_path):
+    print(f"There exists a best_model, the script is gonig to replace.")
+    os.remove(best_model_rename_path)
+
+os.rename(best_model_path, best_model_rename_path)
+print(f"✅ Renamed best model '{best_model}' → 'best_model.pt' (Acc: {best_acc:.4f})")
+
+# Experiment Results (Test Accuracy)
+# CIFAR_CNN： 74.8%
+# resnet18： 74.84%
