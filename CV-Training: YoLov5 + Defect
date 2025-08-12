@@ -1,0 +1,281 @@
+import os
+import sys
+import json
+import argparse
+from pathlib import Path
+
+import cv2
+import numpy as np
+from tqdm import tqdm
+
+import torch
+
+'''
+[讀取圖片]
+      ↓
+[Canny + Morph 去雜訊]
+      ↓
+[Watershed 分割零件]
+      ↓
+[取每個零件的裁切圖]
+      ↓
+[YOLOv5 推論分類瑕疵]
+      ↓
+[畫框 + 存裁切 + JSON]
+'''
+
+# ----------------------------
+# 影像前處理 + 分割（Canny + Morph + Watershed）
+# ----------------------------
+def preprocess_and_segment(img_bgr,
+                           canny_low=50,
+                           canny_high=150,
+                           morph_kernel=3,
+                           min_area=200):  # 最小候選面積，過濾雜點
+    """
+    回傳：
+      - boxes: [(x,y,w,h), ...] 候選零件或區塊的外接框
+      - vis:   前處理可視化影像（除錯）
+      - mask:  分水嶺結果（labels/markers）
+    """
+    h, w = img_bgr.shape[:2]
+    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    # Canny 邊緣偵測
+    edges = cv2.Canny(blur, canny_low, canny_high)
+
+    # 形態學去雜訊（先閉操作黏合邊，後開操作去孤立點）
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (morph_kernel, morph_kernel))
+    edges_close = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+    edges_open  = cv2.morphologyEx(edges_close, cv2.MORPH_OPEN, kernel, iterations=1)
+
+    # 取得「前景」與「背景」的粗略估計
+    # 距離轉換有助於分離黏連區塊
+    sure_bg = cv2.dilate(edges_open, kernel, iterations=3)
+    # 反相後做距離轉換，以填滿內部
+    inv = cv2.bitwise_not(edges_open)
+    dist = cv2.distanceTransform(inv, cv2.DIST_L2, 5)
+    # 根據距離圖自動閾值當作「確定前景」
+    # 擷取候選區塊外接框（面積太小會被過濾）
+    _, sure_fg = cv2.threshold(dist, 0.4 * dist.max(), 255, 0)
+    sure_fg = np.uint8(sure_fg)
+
+    # 未知區域（背景與前景差）
+    unknown = cv2.subtract(sure_bg, sure_fg)
+
+    # 連通元件當作標記
+    num_markers, markers = cv2.connectedComponents(sure_fg)
+    # 分水嶺要求標記從 1 開始，0 保留給未知 
+    # 分水嶺標記矩陣：
+    #  - 0：未知區域
+    #  - 1~N：不同零件/區塊
+    #  - -1：邊界
+    markers = markers + 1
+    markers[unknown == 255] = 0
+
+    # Watershed
+    markers = cv2.watershed(img_bgr, markers)
+
+    # 由 markers 萃取候選區塊
+    boxes = []
+    for label in np.unique(markers):
+        if label <= 1:  # -1 是邊界，1 是背景
+            continue
+        mask = np.uint8(markers == label) * 255
+        cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        if not cnts:
+            continue
+        c = max(cnts, key=cv2.contourArea)
+        area = cv2.contourArea(c)
+        if area < min_area:
+            continue
+        x, y, bw, bh = cv2.boundingRect(c)
+        # 邊界安全檢查
+        x = max(0, x); y = max(0, y)
+        bw = min(bw, w - x); bh = min(bh, h - y)
+        if bw > 0 and bh > 0:
+            boxes.append((x, y, bw, bh))
+
+    # 可視化（邊緣 + 外接框）
+    vis = img_bgr.copy()
+    vis_edges = cv2.cvtColor(edges_open, cv2.COLOR_GRAY2BGR)
+    vis = cv2.addWeighted(vis, 0.85, vis_edges, 0.15, 0)
+    for (x, y, bw, bh) in boxes:
+        cv2.rectangle(vis, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
+
+    return boxes, vis, markers
+
+# ----------------------------
+# YOLOv5 載入（本機 repo 或 torch.hub）
+# ----------------------------
+def load_yolov5(weights_path, yolov5_dir=None, device='cpu'):
+    """
+    weights_path: 你的 .pt 權重（分類/偵測皆可，以下當分類使用）
+    yolov5_dir:   若指定，從本機 yolov5 專案載入（離線友好）
+    """
+    if yolov5_dir and Path(yolov5_dir).exists():
+        sys.path.insert(0, yolov5_dir)
+        from models.common import DetectMultiBackend  # type: ignore
+        from utils.torch_utils import select_device    # type: ignore
+        dev = select_device(device)
+        model = DetectMultiBackend(weights_path, device=dev, dnn=False, fp16=False)
+        model.eval()
+        return ('local', model, dev)
+    else:
+        # 需連網，簡便做法
+        model = torch.hub.load('ultralytics/yolov5', 'yolov5s', force_reload=True, device=device)
+        model.eval()
+        return ('hub', model, device)
+
+# ----------------------------
+# 送 YOLOv5 分類（對每個候選框裁切）
+# ----------------------------
+def classify_crops_with_yolov5(img_bgr, boxes, yolokind_model_device, conf_thres=0.25):
+    kind, model, device = yolokind_model_device
+    results = []
+
+    for (x, y, w, h) in boxes:
+        crop = img_bgr[y:y+h, x:x+w]
+        if crop.size == 0:
+            continue
+
+        if kind == 'hub':
+            # TorchHub 版本：直接丟 BGR (cv2) 也可以，模型內會處理
+            pred = model(crop, size=640, conf=conf_thres)
+            # 統一整理輸出（分類或偵測）
+            if hasattr(pred, 'pandas'):  # 偵測模型
+                df = pred.pandas().xyxy[0]
+                # 這裡你可以換成「有無瑕疵」的規則；先用最大信心值的類別當結果
+                if len(df) > 0:
+                    row = df.sort_values('confidence', ascending=False).iloc[0]
+                    label = str(row['name'])
+                    conf = float(row['confidence'])
+                else:
+                    label, conf = 'no_defect', 0.0
+            else:
+                # 若是分類模型（yolov5-cls），pred 會是 logits/ probs
+                # 這裡提供簡易示範（實務要依你的模型處理）
+                # 先保存 crop 再由分類 pipeline 處理（或改用 YOLOv5-cls API）
+                label, conf = 'unknown', 0.0
+
+        else:
+            # 本機 DetectMultiBackend：用推論函式 (偵測模式)
+            # 若你用的是 YOLOv5 分類（yolov5-cls），請切換對應接口。
+            im = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+            im = im.transpose(2, 0, 1)  # CHW
+            im = np.ascontiguousarray(im)
+            im = torch.from_numpy(im).float().to(model.device)
+            im /= 255.0
+            if im.ndimension() == 3:
+                im = im.unsqueeze(0)
+
+            pred = model(im)  # 偵測 head 輸出（需再做 NMS 等，這裡簡化示範）
+            # 簡易：沒有後處理就標成 unknown；實務請串 yolov5 的 utils 進一步處理
+            label, conf = 'unknown', 0.0
+
+        results.append({
+            'box': [int(x), int(y), int(w), int(h)],
+            'label': label,
+            'confidence': conf
+        })
+
+    return results
+
+# ----------------------------
+# 主流程
+# ----------------------------
+def run_pipeline(
+    images_dir,
+    weights,
+    yolov5_dir=None,
+    out_dir='runs/defects',
+    device='cpu',
+    canny_low=50,
+    canny_high=150,
+    min_area=200
+):
+    out_dir = Path(out_dir)
+    (out_dir / 'vis').mkdir(parents=True, exist_ok=True)
+    (out_dir / 'crops').mkdir(parents=True, exist_ok=True)
+
+    yolokind_model_device = load_yolov5(weights, yolov5_dir=yolov5_dir, device=device)
+
+    results_all = []
+    paths = sorted([p for p in Path(images_dir).glob('*') if p.suffix.lower() in {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'}])
+
+    for img_path in tqdm(paths, desc='Processing'):
+        img_bgr = cv2.imread(str(img_path))
+        if img_bgr is None:
+            print(f'[WARN] cannot read: {img_path}')
+            continue
+
+        boxes, vis, markers = preprocess_and_segment(
+            img_bgr,
+            canny_low=canny_low,
+            canny_high=canny_high,
+            morph_kernel=3,
+            min_area=min_area
+        )
+
+        # 裁切 & 分類
+        preds = classify_crops_with_yolov5(img_bgr, boxes, yolokind_model_device, conf_thres=0.25)
+
+        # 存裁切
+        for i, (x, y, w, h) in enumerate(boxes):
+            crop = img_bgr[y:y+h, x:x+w]
+            cv2.imwrite(str(out_dir / 'crops' / f'{img_path.stem}_crop{i}.png'), crop)
+
+        # 畫上分類結果
+        vis_pred = vis.copy()
+        for p in preds:
+            x, y, w, h = p['box']
+            label = p['label']
+            conf = p['confidence']
+            cv2.rectangle(vis_pred, (x, y), (x+w, y+h), (0, 0, 255), 2)
+            cv2.putText(vis_pred, f'{label} {conf:.2f}', (x, y-6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
+
+        cv2.imwrite(str(out_dir / 'vis' / f'{img_path.stem}_vis.png'), vis_pred)
+
+        results_all.append({
+            'image': str(img_path),
+            'num_candidates': len(boxes),
+            'predictions': preds
+        })
+
+    # 輸出 JSON 總結
+    with open(out_dir / 'results.json', 'w', encoding='utf-8') as f:
+        json.dump(results_all, f, indent=2, ensure_ascii=False)
+
+    print(f'[OK] Done. Visuals: {out_dir}/vis , Crops: {out_dir}/crops , JSON: {out_dir}/results.json')
+
+# ----------------------------
+# CLI
+# ----------------------------
+def parse_args():
+    ap = argparse.ArgumentParser(
+        description='Industrial defect pipeline: Canny -> Watershed -> YOLOv5'
+    )
+    ap.add_argument('--images-dir', required=True, help='input images directory')
+    ap.add_argument('--weights', required=True, help='YOLOv5 .pt weights (your defect model)')
+    ap.add_argument('--yolov5-dir', default=None, help='path to local yolov5 repo (offline)')
+    ap.add_argument('--out-dir', default='runs/defects', help='output folder')
+    ap.add_argument('--device', default='cpu', help='cpu or cuda:0')
+    ap.add_argument('--canny-low', type=int, default=50)
+    ap.add_argument('--canny-high', type=int, default=150)
+    ap.add_argument('--min-area', type=int, default=200)
+    return ap.parse_args()
+
+if __name__ == '__main__':
+    args = parse_args()
+    run_pipeline(
+        images_dir=args.images_dir,
+        weights=args.weights,
+        yolov5_dir=args.yolov5_dir,
+        out_dir=args.out_dir,
+        device=args.device,
+        canny_low=args.canny_low,
+        canny_high=args.canny_high,
+        min_area=args.min_area
+    )
