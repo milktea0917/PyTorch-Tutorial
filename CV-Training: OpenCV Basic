@@ -1,0 +1,58 @@
+import os
+import cv2
+import numpy as np
+import argparse
+
+def parse_tuple_arg(arg_str):
+    """Parse tuple-like string arguments from command line"""
+    if not arg_str or arg_str.lower() == 'false':
+        return False
+    try:
+        # Remove parentheses and split by comma
+        clean_str = arg_str.strip('()').replace(' ', '')
+        values = [int(x) for x in clean_str.split(',')]
+        return tuple(values)
+    except:
+        return False
+
+def main(args):
+    image_path = args.image_path
+    assert os.path.exists(image_path), f"Image file not found: {image_path}"
+    img = cv2.imread(image_path)
+    img_test = img.copy()
+
+    if args.resize:
+        img_test = cv2.resize(img_test, args.resize)
+
+    if args.gray:
+        img_test = cv2.cvtColor(img_test, cv2.COLOR_BGR2GRAY)
+
+    if args.blur:
+        img_test = cv2.GaussianBlur(img_test, args.blur, 0)
+       
+    if args.canny:
+        img_test = cv2.Canny(img_test, args.canny[0], args.canny[1])
+
+    if args.save_path:
+        save_path = os.path.join(args.save_path, "test.png")
+        cv2.imwrite(save_path, img_test)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--image_path", type=str, default="/mnt/ai2/vincent/For_Fun/CV/lena.jpg")
+    parser.add_argument("--resize", type=str, help="200,200", default=False)
+    parser.add_argument("--gray", type=str, help="True/False", default="False")
+    parser.add_argument("--blur", type=str, help="5,5", default=False)
+    parser.add_argument("--canny", type=str, help="100,200", default=False)
+    parser.add_argument("--save_path", type=str, help="save path", default="/mnt/ai2/vincent/For_Fun/CV/")
+    
+    args = parser.parse_args()
+    
+    # Parse tuple arguments
+    args.resize = parse_tuple_arg(args.resize)
+    args.gray = args.gray.lower() == 'true'
+    args.blur = parse_tuple_arg(args.blur)
+    args.canny = parse_tuple_arg(args.canny)
+    args.hough = args.hough.lower() == 'true'
+    
+    main(args)
